@@ -1,24 +1,37 @@
-﻿Get-ADComputer -Identity MSL-PW04B8NT -Properties * | Format-List Name, CanonicalName
-$Machine = Get-ADComputer -Identity MSL-PW04B8NT -Properties * | Format-List CanonicalName | Out-String
-$count = 0
-foreach ($n in $Machine.ToCharArray()) {
-    Write-Host $count")"$n
-    $count++
-}
-$DestinationOU = "MHS-Client Computers/"
-#Scan machine S/N into MoverDevices Text file and save. 
+﻿#Scan machine S/N into MoverDevices Text file and save. 
 #Press play button in powershell.
+$DestinationOU = "MHS-Client Computers/"
 
 foreach ($machine in Get-Content .\MoverDevices.txt) {
     $machine = "MSL-" + $machine
     Write-Host "------------- $machine -----------------" -ForegroundColor Cyan
+    try {
+        if (Get-ADComputer -Identity $machine) {
+            #Before being moved
+            $ADRecord = Get-ADComputer -Identity $machine -Properties * | Format-List CanonicalName | Out-String
+            $ADRString = $ADRecord.Substring(55, 33)
+            if ($ADRString -eq ($DestinationOU + $machine)) {
+                Write-Host "Device already in correct OU | " -NoNewLine
+                Write-Host $ADRString -ForegroundColor Green
+            } else {
+                Write-Host "Device found | " -NoNewLine
+                Write-Host $ADRString -ForegroundColor Yellow
+            }
+            Get-ADComputer -Identity $machine | Move-ADObject -TargetPath 'OU=MHS-Client Computers,OU=Migration Staging,DC=act-maxopco2,DC=com'
 
-    $ADRecord = Get-ADComputer -Identity $machine -Properties * | Format-List CanonicalName | Out-String
-    $ADRString = $ADRecord.Substring(55, 33)
-    Write-Host $ADRString
-    if ($ADRString -eq ($DestinationOU + $machine)) {
-        Write-Host "Device location | " -NoNewLine
-        Write-Host $c -ForegroundColor Green
+            #After being moved
+            if ($ADRString -eq ($DestinationOU + $machine)) {
+                Write-Host "Device moved | " -NoNewLine
+                Write-Host $ADRString -ForegroundColor Green
+            } else {
+                Write-Host "Something went wrong, printing record properties" -ForegroundColor Red
+                Get-ADComputer -Identity $machine -Properties *
+            }
+        }
+    } catch [System.UnauthorizedAccessException] { 
+        Write-Host "Administrative rights required" -ForegroundColor Red
+    } catch {
+        Write-Host "No record found" -ForegroundColor Red
     }
 }
 
